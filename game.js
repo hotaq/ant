@@ -78,6 +78,22 @@ const CONFIG = {
             '#5d6d7e',               // Steel Grey
             '#34495e'                // Charcoal Grey
         ]
+    },
+
+    // 🌊 Interactive Lake & Water Settings
+    lake: {
+        lakes: [
+            { x: 800, y: 1200, rx: 360, ry: 240 },  // Giant central-left lake
+            { x: 2400, y: 550, rx: 240, ry: 170 }   // Scenic top-right pond
+        ],
+        avoidRadiusBuffer: 30,                     // Distance margin for shoreline avoidance steering
+        colors: {
+            deep: '#1b4f72',                       // Deep water navy
+            mid: '#2e86c1',                        // Shimmering base blue water
+            highlight: '#5dade2',                  // Ripple glisten highlight
+            sand: '#e5c185',                       // Sandy beach yellow
+            sandShadow: '#c8a66b'                  // Sandy damp transition border
+        }
     }
 };
 
@@ -99,6 +115,9 @@ class GameSimulation {
         this.placementMode = null; // Can be 'nest' when placing Formigueiro
         this.nestPixels = [];      // Chunky pixels of the Formigueiro
         this.nestRadius = 0;       // Visual and physical radius
+        
+        // 🌊 Water Ripples Shimmer list
+        this.waterRipples = [];
         
         this.windGusts = [];  // 💨 Visual pixel wind smoke trails
         this.windGustTimer = 0.5; // Spawn first wind gust quickly
@@ -321,6 +340,12 @@ class GameSimulation {
                     const worldPos = this.screenToWorld(tx, ty);
                     
                     if (this.placementMode === 'nest') {
+                        // 🌊 Nest placement water boundary check!
+                        if (this.isInsideLake(worldPos.x, worldPos.y)) {
+                            this.showToast("CANNOT BUILD HOME IN WATER!");
+                            return;
+                        }
+
                         this.nestPos = { x: worldPos.x, y: worldPos.y };
                         this.generateNestPixels();
                         this.nestPlaced = true;
@@ -459,6 +484,31 @@ class GameSimulation {
         }
     }
 
+    // 🌊 boundary check for procedural lakes (uses wave sine noise for organic curves!)
+    isInsideLake(wx, wy) {
+        if (!CONFIG.lake || !CONFIG.lake.lakes) return false;
+        
+        for (const l of CONFIG.lake.lakes) {
+            // Apply organic wavy shoreline deformations using sine noise
+            const dx = wx - l.x;
+            const dy = wy - l.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist === 0) return true;
+            
+            const angle = Math.atan2(dy, dx);
+            // Dynamic perimeter deformation wave: ~8% variance at higher frequencies
+            const wave = 1.0 + 0.08 * Math.sin(angle * 6.5) * Math.cos(angle * 3.0);
+            
+            const rx = l.rx * wave;
+            const ry = l.ry * wave;
+            
+            if ((Math.pow(dx / rx, 2) + Math.pow(dy / ry, 2)) <= 1.0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     randomWorldPoint(margin) {
         return {
             x: this.randomAxisPoint(CONFIG.world.width, margin),
@@ -498,6 +548,7 @@ class GameSimulation {
             let fx, fy;
             let attempts = 0;
             let overlapsStone = false;
+            let overlapsWater = false;
             
             do {
                 fx = this.randomAxisPoint(w, margin);
@@ -511,8 +562,16 @@ class GameSimulation {
                         break;
                     }
                 }
+                
+                // Also check if overlaps water or sandy beach transition zone
+                overlapsWater = this.isInsideLake(fx, fy) || 
+                                this.isInsideLake(fx + 25, fy) || 
+                                this.isInsideLake(fx - 25, fy) || 
+                                this.isInsideLake(fx, fy + 25) || 
+                                this.isInsideLake(fx, fy - 25);
+                
                 attempts++;
-            } while (overlapsStone && attempts < 25);
+            } while ((overlapsStone || overlapsWater) && attempts < 25);
             
             this.flowerList.push({
                 x: fx,
@@ -534,8 +593,22 @@ class GameSimulation {
         const h = CONFIG.world.height;
         
         for (let i = 0; i < CONFIG.stones.count; i++) {
-            const sx = this.randomAxisPoint(w, margin);
-            const sy = this.randomAxisPoint(h, margin);
+            let sx, sy;
+            let attempts = 0;
+            let overlapsWater = false;
+            
+            do {
+                sx = this.randomAxisPoint(w, margin);
+                sy = this.randomAxisPoint(h, margin);
+                
+                // Keep stones away from water shorelines
+                overlapsWater = this.isInsideLake(sx, sy) || 
+                                this.isInsideLake(sx + 50, sy) || 
+                                this.isInsideLake(sx - 50, sy) || 
+                                this.isInsideLake(sx, sy + 50) || 
+                                this.isInsideLake(sx, sy - 50);
+                attempts++;
+            } while (overlapsWater && attempts < 20);
             
             // Stone size varies from 0.7x to 1.5x of baseSize
             const scale = CONFIG.stones.baseSize * (0.7 + Math.random() * 0.8);
@@ -883,7 +956,7 @@ class GameSimulation {
         ctx.restore();
     }
 
-    // 🎨 Generates a low-res pixelated mossy forest floor (green earth) background on an offscreen canvas
+    // 🎨 Generates a low-res pixelated mossy forest floor background with beaches and blue lakes
     generatePixelBackground() {
         this.bgCanvas = document.createElement('canvas');
         this.bgCanvas.width = CONFIG.world.width;
@@ -894,31 +967,63 @@ class GameSimulation {
         const w = this.bgCanvas.width;
         const h = this.bgCanvas.height;
         
-        // Render chunky low-res warm green moss and grass earth blocks
+        // Render chunky low-res warm green moss, sandy beaches, and water basins
         for (let x = 0; x < w; x += pixelSize) {
             for (let y = 0; y < h; y += pixelSize) {
-                const val = Math.random();
-                let color = '#3b853e'; // Default medium grass green
+                const cx = x + pixelSize / 2;
+                const cy = y + pixelSize / 2;
                 
-                // Add organic pixelated noise variations of a bright grassy field
-                if (val < 0.35) {
-                    color = '#2e6630'; // Mossy forest green (shadows)
-                } else if (val < 0.65) {
-                    color = '#3b853e'; // Warm meadow green (base)
-                } else if (val < 0.8) {
-                    color = '#469c4a'; // Bright vibrant grass green
-                } else if (val < 0.92) {
-                    color = '#5cb85c'; // Luminous lime green highlights
+                const insideWater = this.isInsideLake(cx, cy);
+                
+                if (insideWater) {
+                    // Water base colors (organic blue noise)
+                    const val = Math.random();
+                    if (val < 0.25) {
+                        bgCtx.fillStyle = '#1f618d'; // Deep shoreline blue
+                    } else if (val < 0.8) {
+                        bgCtx.fillStyle = '#2980b9'; // Beautiful base water blue
+                    } else {
+                        bgCtx.fillStyle = '#1b4f72'; // Dark deep water
+                    }
                 } else {
-                    color = '#543e26'; // Warm organic light loam-soil brown spec
+                    // Check if near water perimeter for sandy shoreline beaches
+                    const isNearWater = this.isInsideLake(cx - 24, cy) || this.isInsideLake(cx + 24, cy) || 
+                                        this.isInsideLake(cx, cy - 24) || this.isInsideLake(cx, cy + 24) ||
+                                        this.isInsideLake(cx - 36, cy - 36) || this.isInsideLake(cx + 36, cy + 36);
+                    
+                    if (isNearWater) {
+                        // Sandy beach blocks
+                        const val = Math.random();
+                        if (val < 0.75) {
+                            bgCtx.fillStyle = CONFIG.lake.colors.sand; // Bright warm sand yellow
+                        } else {
+                            bgCtx.fillStyle = CONFIG.lake.colors.sandShadow; // Damp transition sand
+                        }
+                    } else {
+                        // Default forest grass greens
+                        const val = Math.random();
+                        let color = '#3b853e'; // Default medium grass green
+                        
+                        if (val < 0.35) {
+                            color = '#2e6630'; // Mossy forest green (shadows)
+                        } else if (val < 0.65) {
+                            color = '#3b853e'; // Warm meadow green (base)
+                        } else if (val < 0.8) {
+                            color = '#469c4a'; // Bright vibrant grass green
+                        } else if (val < 0.92) {
+                            color = '#5cb85c'; // Luminous lime green highlights
+                        } else {
+                            color = '#543e26'; // Warm organic loam brown details
+                        }
+                        bgCtx.fillStyle = color;
+                    }
                 }
                 
-                bgCtx.fillStyle = color;
                 bgCtx.fillRect(x, y, pixelSize, pixelSize);
             }
         }
         
-        // Add beautiful "pixelated sandy pebble / detail blocks" on the grass field
+        // Add beautiful "pixelated sandy pebble / detail blocks" strictly on the grassy field (not inside water!)
         const numDetails = Math.floor((w * h) / 45000) + 3;
         for (let i = 0; i < numDetails; i++) {
             const minX = Math.floor(Math.random() * (w / pixelSize)) * pixelSize;
@@ -926,13 +1031,14 @@ class GameSimulation {
             const minW = (1 + Math.floor(Math.random() * 2)) * pixelSize;
             const minH = (1 + Math.floor(Math.random() * 2)) * pixelSize;
             
-            // Soft gray-white sandy pixel highlights
-            bgCtx.fillStyle = 'rgba(255, 255, 255, 0.05)'; 
-            bgCtx.fillRect(minX, minY, minW, minH);
-            
-            // Highlight top border of details for 3D retro depth
-            bgCtx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-            bgCtx.fillRect(minX, minY, minW, pixelSize / 4);
+            // Only draw detailed sandy blocks if not inside lake water
+            if (!this.isInsideLake(minX + minW / 2, minY + minH / 2)) {
+                bgCtx.fillStyle = 'rgba(255, 255, 255, 0.05)'; 
+                bgCtx.fillRect(minX, minY, minW, minH);
+                
+                bgCtx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+                bgCtx.fillRect(minX, minY, minW, pixelSize / 4);
+            }
         }
     }
 
@@ -974,9 +1080,10 @@ class GameSimulation {
                 gy = this.randomAxisPoint(h, margin);
             }
             
-            // Ensure strictly inside boundaries and doesn't spawn inside a stone
+            // Ensure strictly inside boundaries and doesn't spawn inside a stone or water
             let attempts = 0;
             let overlapsStone = false;
+            let overlapsWater = false;
             do {
                 if (attempts > 0) {
                     if (Math.random() < 0.93) {
@@ -1002,8 +1109,16 @@ class GameSimulation {
                         break;
                     }
                 }
+                
+                // Also check if overlaps water or sandy beach transition zone
+                overlapsWater = this.isInsideLake(gx, gy) || 
+                                this.isInsideLake(gx + 30, gy) || 
+                                this.isInsideLake(gx - 30, gy) || 
+                                this.isInsideLake(gx, gy + 30) || 
+                                this.isInsideLake(gx, gy - 30);
+                
                 attempts++;
-            } while (overlapsStone && attempts < 25);
+            } while ((overlapsStone || overlapsWater) && attempts < 25);
             
             const size = CONFIG.grass.baseSize * (0.7 + Math.random() * 0.5);
             const { pixels, maxHeight } = this.generateGrassClumpPixels(size);
@@ -1117,6 +1232,25 @@ class GameSimulation {
         this.troddenTrails.push(trail);
     }
 
+    showToast(message) {
+        const existing = document.getElementById('pixel-toast-alert');
+        if (existing) {
+            existing.remove();
+        }
+        
+        const toast = document.createElement('div');
+        toast.id = 'pixel-toast-alert';
+        toast.className = 'pixel-toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+        }, 3000);
+    }
+
     handleCanvasClick(e) {
         const rect = this.canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left;
@@ -1124,6 +1258,12 @@ class GameSimulation {
         const worldPos = this.screenToWorld(sx, sy);
         
         if (this.placementMode === 'nest') {
+            // 🌊 Nest placement water boundary check!
+            if (this.isInsideLake(worldPos.x, worldPos.y)) {
+                this.showToast("CANNOT BUILD HOME IN WATER!");
+                return;
+            }
+            
             this.nestPos = { x: worldPos.x, y: worldPos.y };
             this.generateNestPixels();
             this.nestPlaced = true;
@@ -1184,6 +1324,42 @@ class GameSimulation {
             this.cameraY += (this.mouseY - h / 2) * (1 / prevZoom - 1 / this.cameraZoom);
             
             this.clampCamera();
+        }
+
+        // 🌊 Spawn glistening water ripples dynamically inside lake boundaries
+        if (this.waterRipples.length < CONFIG.lake.rippleCount && Math.random() < 0.25) {
+            const lake = CONFIG.lake.lakes[Math.floor(Math.random() * CONFIG.lake.lakes.length)];
+            
+            let rx = (Math.random() - 0.5) * lake.rx * 1.7;
+            let ry = (Math.random() - 0.5) * lake.ry * 1.7;
+            let wx = lake.x + rx;
+            let wy = lake.y + ry;
+            
+            if (this.isInsideLake(wx, wy)) {
+                this.waterRipples.push({
+                    x: wx,
+                    y: wy,
+                    length: 12 + Math.floor(Math.random() * 20), // Shimmer line length in world pixels
+                    life: 0,
+                    maxLife: 1.5 + Math.random() * 2.0,          // Duration 1.5s to 3.5s
+                    speed: -15 + Math.random() * 30,             // Soft horizontal drift speed
+                    color: Math.random() > 0.4 ? 'rgba(93, 173, 226, 0.45)' : 'rgba(255, 255, 255, 0.35)' // High contrast shimmer color
+                });
+            }
+        }
+        
+        // Update active water ripples
+        for (let i = this.waterRipples.length - 1; i >= 0; i--) {
+            const r = this.waterRipples[i];
+            r.life += dt;
+            r.x += r.speed * dt;
+            
+            // Wave length dynamics
+            r.x += Math.sin(r.life * 4.0) * 0.15;
+            
+            if (r.life >= r.maxLife || !this.isInsideLake(r.x, r.y)) {
+                this.waterRipples.splice(i, 1);
+            }
         }
         // Update markers (pulse and decay)
         for (let i = this.markers.length - 1; i >= 0; i--) {
@@ -1333,6 +1509,25 @@ class GameSimulation {
             ctx.fillStyle = '#3b853e';
             ctx.fillRect(0, 0, CONFIG.world.width, CONFIG.world.height);
         }
+        
+        // 🌊 Render dynamic shimmering water ripples on top of the water basins
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        const ripplePixelSize = 3;
+        this.waterRipples.forEach(r => {
+            const ratio = r.life / r.maxLife;
+            const fade = ratio < 0.2 ? (ratio / 0.2) : (1.0 - (ratio - 0.2) / 0.8);
+            
+            ctx.fillStyle = r.color;
+            ctx.globalAlpha = Math.max(0, Math.min(1, fade));
+            ctx.fillRect(
+                Math.round(r.x), 
+                Math.round(r.y), 
+                Math.round(r.length), 
+                ripplePixelSize
+            );
+        });
+        ctx.restore();
         
         // 👣 Render dynamic decaying footprint & highway trails (fades after 3 seconds!)
         this.troddenTrails.forEach(trail => {
@@ -1592,6 +1787,9 @@ class Ant {
         // Apply retro stone obstacle avoidance steering force
         this.avoidStones(dt);
         
+        // Apply shoreline water avoidance steering force
+        this.avoidWater(dt);
+        
         if (this.isMoving) {
             this.x += Math.cos(this.angle) * this.speed * dt;
             this.y += Math.sin(this.angle) * this.speed * dt;
@@ -1740,6 +1938,7 @@ class Ant {
     }
 
     // 🪨 Steering obstacle avoidance for procedural stones (smooth slide and push-out physics)
+    // 🪨 Steering obstacle avoidance for procedural stones (smooth slide and push-out physics)
     avoidStones(dt) {
         let steerX = 0;
         let steerY = 0;
@@ -1775,6 +1974,63 @@ class Ant {
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             
             this.angle += angleDiff * dt * 4.5;
+        }
+    }
+
+    // 🌊 Steering obstacle avoidance for water shorelines (slide along sandy beaches and push-out physics)
+    avoidWater(dt) {
+        const step = 16;
+        
+        // If ant is inside water (safety nudge), push it back onto sand instantly
+        if (this.game.isInsideLake(this.x, this.y)) {
+            let pushX = 0;
+            let pushY = 0;
+            
+            const sampleAngles = [0, Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, -3*Math.PI/4, -Math.PI/2, -Math.PI/4];
+            for (const angle of sampleAngles) {
+                const sx = this.x + Math.cos(angle) * step;
+                const sy = this.y + Math.sin(angle) * step;
+                if (!this.game.isInsideLake(sx, sy)) {
+                    pushX = Math.cos(angle);
+                    pushY = Math.sin(angle);
+                    break;
+                }
+            }
+            
+            if (pushX !== 0 || pushY !== 0) {
+                this.x += pushX * 3.5;
+                this.y += pushY * 3.5;
+                this.angle = Math.atan2(pushY, pushX);
+            }
+            return;
+        }
+        
+        // Shoreline steering force if approaching water boundary
+        let isNearWater = false;
+        let steerX = 0;
+        let steerY = 0;
+        
+        const buffer = CONFIG.lake.avoidRadiusBuffer;
+        const numSamples = 12;
+        for (let i = 0; i < numSamples; i++) {
+            const angle = (i / numSamples) * Math.PI * 2;
+            const sx = this.x + Math.cos(angle) * buffer;
+            const sy = this.y + Math.sin(angle) * buffer;
+            
+            if (this.game.isInsideLake(sx, sy)) {
+                isNearWater = true;
+                steerX += -Math.cos(angle);
+                steerY += -Math.sin(angle);
+            }
+        }
+        
+        if (isNearWater) {
+            const desiredAngle = Math.atan2(steerY, steerX);
+            let angleDiff = desiredAngle - this.angle;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            
+            this.angle += angleDiff * dt * 5.0;
         }
     }
 

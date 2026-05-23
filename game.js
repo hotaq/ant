@@ -535,28 +535,32 @@ class GameSimulation {
         }
     }
 
-    // 🌊 boundary check for procedural lakes (uses wave sine noise for organic curves!)
+    // 🌊 boundary check for a specific procedural lake l
+    isInsideLakeOf(wx, wy, l) {
+        const dx = wx - l.x;
+        const dy = wy - l.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist === 0) return true;
+        
+        const angle = Math.atan2(dy, dx);
+        // Dynamic perimeter deformation wave using per-lake randomized shape coefficients
+        const waveIntensity = l.waveIntensity !== undefined ? l.waveIntensity : 0.08;
+        const freq1 = l.freq1 !== undefined ? l.freq1 : 6.5;
+        const freq2 = l.freq2 !== undefined ? l.freq2 : 3.0;
+        const wave = 1.0 + waveIntensity * Math.sin(angle * freq1) * Math.cos(angle * freq2);
+        
+        const rx = l.rx * wave;
+        const ry = l.ry * wave;
+        
+        return (Math.pow(dx / rx, 2) + Math.pow(dy / ry, 2)) <= 1.0;
+    }
+
+    // 🌊 boundary check for all active procedural lakes
     isInsideLake(wx, wy) {
         if (!CONFIG.lake || !CONFIG.lake.lakes) return false;
         
         for (const l of CONFIG.lake.lakes) {
-            // Apply organic wavy shoreline deformations using sine noise
-            const dx = wx - l.x;
-            const dy = wy - l.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist === 0) return true;
-            
-            const angle = Math.atan2(dy, dx);
-            // Dynamic perimeter deformation wave using per-lake randomized shape coefficients
-            const waveIntensity = l.waveIntensity !== undefined ? l.waveIntensity : 0.08;
-            const freq1 = l.freq1 !== undefined ? l.freq1 : 6.5;
-            const freq2 = l.freq2 !== undefined ? l.freq2 : 3.0;
-            const wave = 1.0 + waveIntensity * Math.sin(angle * freq1) * Math.cos(angle * freq2);
-            
-            const rx = l.rx * wave;
-            const ry = l.ry * wave;
-            
-            if ((Math.pow(dx / rx, 2) + Math.pow(dy / ry, 2)) <= 1.0) {
+            if (this.isInsideLakeOf(wx, wy, l)) {
                 return true;
             }
         }
@@ -1563,6 +1567,52 @@ class GameSimulation {
             ctx.fillStyle = '#3b853e';
             ctx.fillRect(0, 0, CONFIG.world.width, CONFIG.world.height);
         }
+
+        // 🌊 Render animated pixel-art water waves and highlights snapping to the 16px grid!
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        const grid = 16;
+        const worldW = CONFIG.world.width;
+        const worldH = CONFIG.world.height;
+        const time = (performance.now() / 1000); // Dynamic float time in seconds
+        
+        // Loop over lakes and draw moving water highlights
+        CONFIG.lake.lakes.forEach((lake, lIdx) => {
+            // Define bounding box of the lake to keep loop bounds extremely tight and high performance!
+            const pad = 50;
+            const startX = Math.floor(Math.max(0, lake.x - lake.rx - pad) / grid) * grid;
+            const endX = Math.ceil(Math.min(worldW, lake.x + lake.rx + pad) / grid) * grid;
+            const startY = Math.floor(Math.max(0, lake.y - lake.ry - pad) / grid) * grid;
+            const endY = Math.ceil(Math.min(worldH, lake.y + lake.ry + pad) / grid) * grid;
+            
+            for (let gx = startX; gx < endX; gx += grid) {
+                for (let gy = startY; gy < endY; gy += grid) {
+                    const cx = gx + grid / 2;
+                    const cy = gy + grid / 2;
+                    
+                    // Verify if this grid coordinate falls inside this specific lake
+                    if (this.isInsideLakeOf(cx, cy, lake)) {
+                        // Draw animated shimmering textures that drift over time!
+                        const shiftX = Math.round(Math.sin(time * 1.2 + (cy * 0.04)) * 7.0);
+                        const waveVal = Math.sin((cx + shiftX) * 0.07 + time * 2.2 + lIdx);
+                        
+                        if (waveVal > 0.72) {
+                            // Bright Glistening Wave crest highlight (light blue)
+                            ctx.fillStyle = CONFIG.lake.colors.highlight;
+                            ctx.globalAlpha = 0.40;
+                            // Snapped retro wave highlight line
+                            ctx.fillRect(gx + 1, gy + 6, grid - 2, 2); 
+                        } else if (waveVal < -0.74) {
+                            // Dark Deep Wave trough (deep blue navy)
+                            ctx.fillStyle = CONFIG.lake.colors.deep;
+                            ctx.globalAlpha = 0.45;
+                            ctx.fillRect(gx + 1, gy + 10, grid - 2, 2);
+                        }
+                    }
+                }
+            }
+        });
+        ctx.restore();
         
         // 🌊 Render dynamic shimmering water ripples on top of the water basins
         ctx.save();

@@ -195,7 +195,33 @@ class GameSimulation {
         });
     }
 
+    generateLakePositions() {
+        const w = CONFIG.world.width;
+        const h = CONFIG.world.height;
+        
+        // Large Lake: Base radius rx=360, ry=240
+        const rx1 = 360;
+        const ry1 = 240;
+        // Keep inside bounds with 100px padding
+        const x1 = rx1 + 100 + Math.random() * (w / 2 - rx1 - 200); // left half of the world
+        const y1 = ry1 + 100 + Math.random() * (h - ry1 * 2 - 200);
+        
+        // Small Lake: Base radius rx=240, ry=170
+        const rx2 = 240;
+        const ry2 = 170;
+        const x2 = w / 2 + rx2 + 100 + Math.random() * (w / 2 - rx2 - 200); // right half of the world
+        const y2 = ry2 + 100 + Math.random() * (h - ry2 * 2 - 200);
+        
+        CONFIG.lake.lakes = [
+            { x: Math.round(x1), y: Math.round(y1), rx: rx1, ry: ry1 },
+            { x: Math.round(x2), y: Math.round(y2), rx: rx2, ry: ry2 }
+        ];
+    }
+
     init() {
+        // Randomize lake positions first so all procedurally generated entities respect them
+        this.generateLakePositions();
+
         this.resizeCanvas();
         
         // Generate world items once at startup

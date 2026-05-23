@@ -103,3 +103,135 @@ html, body {
     0% { opacity: 1; }
     100% { opacity: 0; }
 }
+
+/* ⚙️ SYSTEM SETTINGS BUTTON (Top-Right aligned steel-grey button) */
+.system-btn {
+    left: auto;
+    right: 25px;
+    background-color: #7f8c8d; /* Retro steel grey */
+    box-shadow: 
+        inset -4px -4px 0px 0px #4d5656, /* Dark indent */
+        inset 4px 4px 0px 0px #bdc3c7,   /* Light bevel highlight */
+        0px 0px 15px rgba(127, 140, 141, 0.45);
+}
+
+.system-btn:hover {
+    background-color: #95a5a6; /* Lighter grey hover */
+    box-shadow: 
+        inset -4px -4px 0px 0px #5d6d7e,
+        inset 4px 4px 0px 0px #ecf0f1,
+        0px 0px 25px rgba(149, 165, 166, 0.7);
+}
+
+.system-btn:active {
+    transform: translateY(3px) scale(0.98);
+    box-shadow: 
+        inset 4px 4px 0px 0px #4d5656,
+        inset -4px -4px 0px 0px #bdc3c7,
+        0px 0px 10px rgba(127, 140, 141, 0.3);
+}
+
+/* 📦 RETRO PIXEL MODAL */
+.pixel-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.75); /* Dark dim overlay */
+    z-index: 200;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    image-rendering: pixelated;
+    backdrop-filter: blur(4px); /* Glassmorphism background blur */
+}
+
+.pixel-modal-content {
+    background-color: #2c3e50; /* Deep blue-grey background */
+    border: 6px solid #000000;
+    width: 380px;
+    padding: 24px;
+    font-family: 'Press Start 2P', monospace;
+    color: #FFFFFF;
+    box-shadow: 
+        inset -6px -6px 0px 0px #1a252f, /* Shadow bevel */
+        inset 6px 6px 0px 0px #34495e,  /* Highlight bevel */
+        0px 10px 30px rgba(0, 0, 0, 0.7);
+    animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes popIn {
+    0% { transform: scale(0.85); opacity: 0; }
+    100% { transform: scale(1.0); opacity: 1; }
+}
+
+.pixel-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 4px dashed #000000;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+}
+
+.pixel-modal-header h2 {
+    font-size: 14px;
+    color: #f1c40f; /* Glistening retro yellow */
+    text-shadow: 2px 2px 0px #000000;
+}
+
+.pixel-modal-close {
+    font-size: 24px;
+    cursor: pointer;
+    color: #e74c3c; /* Warning red */
+    transition: all 0.05s ease;
+}
+
+.pixel-modal-close:hover {
+    transform: scale(1.15);
+    color: #c0392b;
+}
+
+.pixel-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.pixel-modal-body p {
+    font-size: 9px;
+    line-height: 1.6;
+    color: #bdc3c7;
+    margin-bottom: 10px;
+}
+
+/* Modal Internal Buttons */
+.modal-btn {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    display: block;
+    width: 100%;
+    text-align: center;
+    background-color: #c0392b; /* Warning red for recreate */
+    box-shadow: 
+        inset -4px -4px 0px 0px #7b1f15,
+        inset 4px 4px 0px 0px #e74c3c,
+        0px 0px 15px rgba(192, 57, 43, 0.45);
+}
+
+.modal-btn:hover {
+    background-color: #e74c3c;
+    box-shadow: 
+        inset -4px -4px 0px 0px #962d22,
+        inset 4px 4px 0px 0px #f1948a,
+        0px 0px 25px rgba(231, 76, 60, 0.7);
+}
+
+.modal-btn:active {
+    box-shadow: 
+        inset 4px 4px 0px 0px #7b1f15,
+        inset -4px -4px 0px 0px #e74c3c,
+        0px 0px 10px rgba(192, 57, 43, 0.3);
+}

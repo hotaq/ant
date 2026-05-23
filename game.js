@@ -243,17 +243,138 @@ class GameSimulation {
         CONFIG.lake.lakes = newLakes;
     }
 
-    init() {
-        // Randomize lake positions first so all procedurally generated entities respect them
-        this.generateLakePositions();
+    saveWorldToLocalStorage() {
+        const mapState = {
+            lakes: CONFIG.lake.lakes,
+            stones: this.stoneList.map(s => ({ x: s.x, y: s.y, scale: s.scale, colorIdx: s.colorIdx })),
+            grass: this.grassTufts.map(g => ({ x: g.x, y: g.y, size: g.size })),
+            flowers: this.flowerList.map(f => ({ x: f.x, y: f.y, imgIndex: f.imgIndex, scale: f.scale })),
+            nestPos: this.nestPos,
+            nestPlaced: this.nestPlaced
+        };
+        try {
+            localStorage.setItem('ant_kingdom_save_state', JSON.stringify(mapState));
+        } catch (e) {
+            console.warn("Could not save map state to localStorage:", e);
+        }
+    }
 
-        this.resizeCanvas();
+    loadWorldFromLocalStorage() {
+        const saved = localStorage.getItem('ant_kingdom_save_state');
+        if (!saved) return false;
         
-        // Generate world items once at startup
-        this.generatePixelBackground();
+        try {
+            const mapState = JSON.parse(saved);
+            if (!mapState || !mapState.lakes) return false;
+            
+            // Restore Lakes
+            CONFIG.lake.lakes = mapState.lakes;
+            
+            // Restore Stones and regenerate pixels
+            this.stoneList = [];
+            for (const s of mapState.stones) {
+                const { pixels, width, height, radius } = this.generateStonePixels(s.scale);
+                this.stoneList.push({
+                    x: s.x,
+                    y: s.y,
+                    scale: s.scale,
+                    pixels: pixels,
+                    width: width,
+                    height: height,
+                    radius: radius,
+                    colorIdx: s.colorIdx !== undefined ? s.colorIdx : 0
+                });
+            }
+            this.stoneList.sort((a, b) => a.y - b.y);
+            
+            // Restore Grass and regenerate pixels
+            this.grassTufts = [];
+            for (const g of mapState.grass) {
+                const { pixels, maxHeight } = this.generateGrassClumpPixels(g.size);
+                this.grassTufts.push({
+                    x: g.x,
+                    y: g.y,
+                    size: g.size,
+                    pixels: pixels,
+                    maxHeight: maxHeight,
+                    rustlePhase: 0,
+                    rustleSpeed: 0,
+                    isRustling: false
+                });
+            }
+            
+            // Restore Flowers
+            this.flowerList = [];
+            for (const f of mapState.flowers) {
+                this.flowerList.push({
+                    x: f.x,
+                    y: f.y,
+                    imgIndex: f.imgIndex,
+                    scale: f.scale,
+                    rustlePhase: 0,
+                    rustleSpeed: 0,
+                    isRustling: false
+                });
+            }
+            
+            // Restore Nest
+            this.nestPos = mapState.nestPos;
+            this.nestPlaced = mapState.nestPlaced;
+            if (this.nestPlaced && this.nestPos) {
+                this.generateNestPixels();
+                // Toggle UI buttons on load!
+                const placeBtn = document.getElementById('btn-place-nest');
+                if (placeBtn) placeBtn.style.display = 'none';
+                const spawnBtn = document.getElementById('btn-spawn-ant');
+                if (spawnBtn) spawnBtn.style.display = 'block';
+                
+                // Spawn 3 initial ants emerging from the nest as a delightful load reward!
+                for (let k = 0; k < 3; k++) {
+                    setTimeout(() => {
+                        this.spawnAnt(this.nestPos.x, this.nestPos.y);
+                    }, k * 180);
+                }
+            }
+            
+            return true;
+        } catch (e) {
+            console.warn("Failed to load map state from localStorage:", e);
+            return false;
+        }
+    }
+
+    generateNewWorld() {
+        // Clear gameplay states
+        this.nestPos = null;
+        this.nestPlaced = false;
+        this.ants = [];
+        this.markers = [];
+        this.troddenTrails = [];
+        
+        // Generate new randomized terrain coordinates
+        this.generateLakePositions();
         this.generateStones(); // Generate stones first so grass/flowers can avoid them!
         this.generateGrass();
         this.generateFlowers();
+        
+        // Render background canvas from the new coordinates
+        this.generatePixelBackground();
+        
+        // Persist the new world state to localStorage
+        this.saveWorldToLocalStorage();
+    }
+
+    init() {
+        this.resizeCanvas();
+        
+        // Try to load preserved world, otherwise generate procedurally
+        const loaded = this.loadWorldFromLocalStorage();
+        if (!loaded) {
+            this.generateNewWorld();
+        } else {
+            // Re-pre-render background canvas from restored coordinates
+            this.generatePixelBackground();
+        }
         
         window.addEventListener('resize', () => this.resizeCanvas());
         
@@ -409,6 +530,9 @@ class GameSimulation {
                         
                         this.canvas.style.cursor = 'crosshair';
                         
+                        // Persist nest placement in local storage!
+                        this.saveWorldToLocalStorage();
+
                         // Spawn 3 initial ants emerging from the nest as a delightful reward!
                         for (let k = 0; k < 3; k++) {
                             setTimeout(() => {
@@ -472,6 +596,79 @@ class GameSimulation {
                         this.lastManualSpawnAt = now;
                     }
                 }
+            });
+        }
+        
+        // Bind SETTINGS button, CLOSE button, and Settings Modal
+        const settingsBtn = document.getElementById('btn-settings');
+        const modal = document.getElementById('settings-modal');
+        const closeBtn = document.querySelector('.pixel-modal-close');
+        
+        if (settingsBtn && modal) {
+            settingsBtn.addEventListener('mousedown', (e) => {
+                e.stopPropagation(); // Prevents placing marker under the button on press
+            });
+            settingsBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevents placing marker under the button on click
+                modal.style.display = 'flex';
+            });
+        }
+        
+        if (closeBtn && modal) {
+            closeBtn.addEventListener('mousedown', (e) => {
+                e.stopPropagation(); // Prevents placing marker under the button on press
+            });
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevents placing marker under the button on click
+                modal.style.display = 'none';
+            });
+            
+            // Close modal when clicking outside of the content block
+            modal.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+            });
+            modal.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+        
+        // Bind RECREATE WORLD button with click propagation stopped
+        const recreateBtn = document.getElementById('btn-recreate-world');
+        if (recreateBtn) {
+            recreateBtn.addEventListener('mousedown', (e) => {
+                e.stopPropagation(); // Prevents placing marker under the button on press
+            });
+            recreateBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevents placing marker under the button on click
+                
+                // Clear active save state
+                localStorage.removeItem('ant_kingdom_save_state');
+                
+                // Toggle UI buttons back to startup placement state
+                const placeBtn = document.getElementById('btn-place-nest');
+                if (placeBtn) {
+                    placeBtn.style.display = 'block';
+                    placeBtn.style.backgroundColor = '#d35400'; // Reset color
+                }
+                const spawnBtn = document.getElementById('btn-spawn-ant');
+                if (spawnBtn) spawnBtn.style.display = 'none';
+                
+                this.placementMode = null;
+                this.canvas.style.cursor = 'crosshair';
+                
+                // Hide settings modal
+                if (modal) {
+                    modal.style.display = 'none';
+                }
+                
+                // Generate a fresh procedural world and save it immediately
+                this.generateNewWorld();
+                
+                // Show gorgeous warning toast
+                this.showToast("WORLD RECREATED!");
             });
         }
         
@@ -1335,6 +1532,9 @@ class GameSimulation {
             
             this.canvas.style.cursor = 'crosshair';
             
+            // Persist nest placement in local storage!
+            this.saveWorldToLocalStorage();
+
             // Spawn 3 initial ants emerging from the nest as a delightful reward!
             for (let k = 0; k < 3; k++) {
                 setTimeout(() => {

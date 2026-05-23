@@ -92,6 +92,14 @@ class GameSimulation {
         this.grassTufts = []; // 🌿 Interactive grass clumps
         this.flowerList = []; // 🌸 Scattered flowers positions
         this.stoneList = [];  // 🪨 Procedurally generated obstacle stones
+        
+        // 🏡 Formigueiro (Anthill) State
+        this.nestPos = null;
+        this.nestPlaced = false;
+        this.placementMode = null; // Can be 'nest' when placing Formigueiro
+        this.nestPixels = [];      // Chunky pixels of the Formigueiro
+        this.nestRadius = 0;       // Visual and physical radius
+        
         this.windGusts = [];  // 💨 Visual pixel wind smoke trails
         this.windGustTimer = 0.5; // Spawn first wind gust quickly
         this.troddenTrails = []; // 👣 Dynamic decaying footprint & highway trails (3s fade!)
@@ -312,21 +320,61 @@ class GameSimulation {
                     const ty = e.changedTouches[0].clientY - rect.top;
                     const worldPos = this.screenToWorld(tx, ty);
                     
-                    this.markers.push({
-                        x: worldPos.x,
-                        y: worldPos.y,
-                        radius: 8,
-                        pulsePhase: 0,
-                        pulseSpeed: 0.1,
-                        intensity: 1.0
-                    });
+                    if (this.placementMode === 'nest') {
+                        this.nestPos = { x: worldPos.x, y: worldPos.y };
+                        this.generateNestPixels();
+                        this.nestPlaced = true;
+                        this.placementMode = null;
+                        
+                        const placeBtn = document.getElementById('btn-place-nest');
+                        if (placeBtn) placeBtn.style.display = 'none';
+                        const spawnBtn = document.getElementById('btn-spawn-ant');
+                        if (spawnBtn) spawnBtn.style.display = 'block';
+                        
+                        this.canvas.style.cursor = 'crosshair';
+                        
+                        // Spawn 3 initial ants emerging from the nest as a delightful reward!
+                        for (let k = 0; k < 3; k++) {
+                            setTimeout(() => {
+                                this.spawnAnt(this.nestPos.x, this.nestPos.y);
+                            }, k * 180);
+                        }
+                    } else {
+                        this.markers.push({
+                            x: worldPos.x,
+                            y: worldPos.y,
+                            radius: 8,
+                            pulsePhase: 0,
+                            pulseSpeed: 0.1,
+                            intensity: 1.0
+                        });
+                    }
                 }
             }
             this.initialTouchDist = 0;
         }, { passive: true });
         
-        // Spawn exactly ONE ant in the center of the massive virtual world bounds
-        this.spawnAnt(CONFIG.world.width / 2, CONFIG.world.height / 2);
+        // Bind PLACE NEST button with click propagation stopped
+        const placeNestBtn = document.getElementById('btn-place-nest');
+        if (placeNestBtn) {
+            placeNestBtn.addEventListener('mousedown', (e) => {
+                e.stopPropagation(); // Prevents placing marker under the button on press
+            });
+            placeNestBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevents placing marker under the button on click
+                
+                // Toggle placement mode
+                if (this.placementMode === 'nest') {
+                    this.placementMode = null;
+                    placeNestBtn.style.backgroundColor = '#d35400'; // Reset retro orange color
+                    this.canvas.style.cursor = 'crosshair';
+                } else {
+                    this.placementMode = 'nest';
+                    placeNestBtn.style.backgroundColor = '#8e44ad'; // Purple highlight for active mode!
+                    this.canvas.style.cursor = 'cell'; // Crosshair box cursor
+                }
+            });
+        }
         
         // Bind floating retro spawn button with click propagation stopped
         const spawnBtn = document.getElementById('btn-spawn-ant');
@@ -342,9 +390,11 @@ class GameSimulation {
                     return;
                 }
 
-                const spawnPoint = this.randomWorldPoint(CONFIG.ant.spawnMargin);
-                if (this.spawnAnt(spawnPoint.x, spawnPoint.y)) {
-                    this.lastManualSpawnAt = now;
+                // Emerges directly from the Formigueiro center!
+                if (this.nestPlaced && this.nestPos) {
+                    if (this.spawnAnt(this.nestPos.x, this.nestPos.y)) {
+                        this.lastManualSpawnAt = now;
+                    }
                 }
             });
         }
@@ -685,6 +735,137 @@ class GameSimulation {
         ctx.restore();
     }
 
+    // 🏡 Procedurally generates the layout of a custom pixel-art anthill (Formigueiro)
+    generateNestPixels() {
+        const pixelsMap = {};
+        const rx = 18;
+        const ry = 13;
+        
+        const colors = {
+            base: '#543e26',       // Deep loam dirt brown
+            highlight: '#8f5c38',  // Light sandy dirt highlight (top-left)
+            shadow: '#2e1c0c',     // Dark soil shadow (bottom-right)
+            entrance: '#130a04',   // Black center entrance hole
+            outline: '#1e272c',    // Solid retro pixel outline
+            dropShadow: 'rgba(12, 30, 14, 0.45)' // Green loam shadow matching stone sways
+        };
+        
+        // Define shape boundaries:
+        const isInsideNest = (x, y) => {
+            if (y > ry * 0.9) return false;
+            
+            // Equation for a dome-like cone shape:
+            const widthAtHeight = rx * (1.0 - (ry - y) / (ry * 2.2));
+            return Math.abs(x) <= widthAtHeight && y >= -ry && y <= ry;
+        };
+        
+        // Define center entrance hole
+        const isEntrance = (x, y) => {
+            return (Math.pow(x / 4.0, 2) + Math.pow((y + ry * 0.2) / 2.5, 2)) <= 1.0;
+        };
+        
+        // Flat loam drop shadow underneath the anthill (slightly offset down-right)
+        const shadowOffsetDx = 2;
+        const shadowOffsetDy = 2;
+        for (let dx = -rx - 4; dx <= rx + 4; dx++) {
+            for (let dy = -ry - 4; dy <= ry + 4; dy++) {
+                if (isInsideNest(dx - shadowOffsetDx, dy - shadowOffsetDy)) {
+                    const key = `${dx},${dy}`;
+                    pixelsMap[key] = {
+                        dx: dx,
+                        dy: dy,
+                        color: colors.dropShadow,
+                        isShadow: true
+                    };
+                }
+            }
+        }
+        
+        // Generate anthill body
+        for (let dx = -rx - 1; dx <= rx + 1; dx++) {
+            for (let dy = -ry - 1; dy <= ry + 1; dy++) {
+                if (isInsideNest(dx, dy)) {
+                    const key = `${dx},${dy}`;
+                    
+                    // Edge outline detection
+                    const isOutlinePixel = !isInsideNest(dx+1, dy) || !isInsideNest(dx-1, dy) || !isInsideNest(dx, dy+1) || !isInsideNest(dx, dy-1);
+                    
+                    let color = colors.base;
+                    
+                    if (isOutlinePixel) {
+                        color = colors.outline;
+                    } else if (isEntrance(dx, dy)) {
+                        color = colors.entrance;
+                        
+                        const isEntranceEdge = !isEntrance(dx+1, dy) || !isEntrance(dx-1, dy) || !isEntrance(dx, dy+1) || !isEntrance(dx, dy-1);
+                        if (isEntranceEdge) {
+                            color = colors.outline;
+                        }
+                    } else {
+                        // Loam texturing & lighting
+                        const nearTopLeftEdge = !isInsideNest(dx - 1, dy) || !isInsideNest(dx, dy - 1) || !isInsideNest(dx - 1, dy - 1);
+                        const nearBottomRightEdge = !isInsideNest(dx + 1, dy) || !isInsideNest(dx, dy + 1) || !isInsideNest(dx + 1, dy + 1);
+                        
+                        if (nearTopLeftEdge) {
+                            color = colors.highlight;
+                        } else if (nearBottomRightEdge) {
+                            color = colors.shadow;
+                        } else {
+                            const noise = Math.random();
+                            if (noise < 0.12) {
+                                color = colors.highlight;
+                            } else if (noise < 0.24) {
+                                color = colors.shadow;
+                            }
+                        }
+                    }
+                    
+                    // Overwrite shadow pixels
+                    pixelsMap[key] = {
+                        dx: dx,
+                        dy: dy,
+                        color: color,
+                        isShadow: false
+                    };
+                }
+            }
+        }
+        
+        this.nestPixels = Object.values(pixelsMap);
+        this.nestRadius = rx * 3;
+    }
+
+    // 🏡 Draw a procedurally generated chunky retro anthill with crisp integer-snapped pixels
+    drawNest(ctx) {
+        if (!this.nestPlaced || !this.nestPos) return;
+        const pixelSize = 3;
+        
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        
+        // Render drop shadow pixels first
+        this.nestPixels.forEach(p => {
+            if (p.isShadow) {
+                const px = Math.round(this.nestPos.x + p.dx * pixelSize);
+                const py = Math.round(this.nestPos.y + p.dy * pixelSize);
+                ctx.fillStyle = p.color;
+                ctx.fillRect(px, py, pixelSize, pixelSize);
+            }
+        });
+        
+        // Render body pixels on top
+        this.nestPixels.forEach(p => {
+            if (!p.isShadow) {
+                const px = Math.round(this.nestPos.x + p.dx * pixelSize);
+                const py = Math.round(this.nestPos.y + p.dy * pixelSize);
+                ctx.fillStyle = p.color;
+                ctx.fillRect(px, py, pixelSize, pixelSize);
+            }
+        });
+        
+        ctx.restore();
+    }
+
     // 🎨 Generates a low-res pixelated mossy forest floor (green earth) background on an offscreen canvas
     generatePixelBackground() {
         this.bgCanvas = document.createElement('canvas');
@@ -898,15 +1079,37 @@ class GameSimulation {
         const sy = e.clientY - rect.top;
         const worldPos = this.screenToWorld(sx, sy);
         
-        // Place a pulsing target marker in virtual world space
-        this.markers.push({
-            x: worldPos.x,
-            y: worldPos.y,
-            radius: 8,
-            pulsePhase: 0,
-            pulseSpeed: 0.1,
-            intensity: 1.0
-        });
+        if (this.placementMode === 'nest') {
+            this.nestPos = { x: worldPos.x, y: worldPos.y };
+            this.generateNestPixels();
+            this.nestPlaced = true;
+            this.placementMode = null;
+            
+            // Toggle UI buttons
+            const placeBtn = document.getElementById('btn-place-nest');
+            if (placeBtn) placeBtn.style.display = 'none';
+            const spawnBtn = document.getElementById('btn-spawn-ant');
+            if (spawnBtn) spawnBtn.style.display = 'block';
+            
+            this.canvas.style.cursor = 'crosshair';
+            
+            // Spawn 3 initial ants emerging from the nest as a delightful reward!
+            for (let k = 0; k < 3; k++) {
+                setTimeout(() => {
+                    this.spawnAnt(this.nestPos.x, this.nestPos.y);
+                }, k * 180);
+            }
+        } else {
+            // Place a pulsing target marker in virtual world space
+            this.markers.push({
+                x: worldPos.x,
+                y: worldPos.y,
+                radius: 8,
+                pulsePhase: 0,
+                pulseSpeed: 0.1,
+                intensity: 1.0
+            });
+        }
     }
 
     gameLoop(timestamp) {
@@ -1185,6 +1388,15 @@ class GameSimulation {
             });
         });
         
+        // Add Formigueiro (anthill) if placed
+        if (this.nestPlaced && this.nestPos) {
+            renderables.push({
+                y: this.nestPos.y,
+                type: 'nest',
+                data: this
+            });
+        }
+        
         // Add ants
         this.ants.forEach(ant => {
             renderables.push({
@@ -1215,6 +1427,8 @@ class GameSimulation {
                 this.drawFlower(ctx, r.data, windSwayAngle);
             } else if (r.type === 'stone') {
                 this.drawPixelStone(ctx, r.data);
+            } else if (r.type === 'nest') {
+                this.drawNest(ctx);
             } else if (r.type === 'ant') {
                 r.data.render(ctx);
             }

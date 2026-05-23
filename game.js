@@ -245,6 +245,8 @@ class GameSimulation {
 
     saveWorldToLocalStorage() {
         const mapState = {
+            width: CONFIG.world.width,
+            height: CONFIG.world.height,
             lakes: CONFIG.lake.lakes,
             stones: this.stoneList.map(s => ({ x: s.x, y: s.y, scale: s.scale, colorIdx: s.colorIdx })),
             grass: this.grassTufts.map(g => ({ x: g.x, y: g.y, size: g.size })),
@@ -276,6 +278,17 @@ class GameSimulation {
         try {
             const mapState = JSON.parse(saved);
             if (!mapState || !mapState.lakes) return false;
+            
+            // Restore World Size and pre-populate setting inputs
+            if (mapState.width && mapState.height) {
+                CONFIG.world.width = mapState.width;
+                CONFIG.world.height = mapState.height;
+                
+                const wInput = document.getElementById('input-world-width');
+                const hInput = document.getElementById('input-world-height');
+                if (wInput) wInput.value = mapState.width;
+                if (hInput) hInput.value = mapState.height;
+            }
             
             // Restore Lakes
             CONFIG.lake.lakes = mapState.lakes;
@@ -366,13 +379,34 @@ class GameSimulation {
         }
     }
 
-    generateNewWorld() {
+    generateNewWorld(customW, customH) {
         // Clear gameplay states
         this.nestPos = null;
         this.nestPlaced = false;
         this.ants = [];
         this.markers = [];
         this.troddenTrails = [];
+        
+        // Dynamically assign custom bounds if provided
+        if (customW && customH) {
+            CONFIG.world.width = Math.max(1200, Math.min(6400, customW));
+            CONFIG.world.height = Math.max(1200, Math.min(4000, customH));
+            
+            // Proportionally scale foliage and obstacles to maintain visual density!
+            // Base area = 3200 * 2000 = 6,400,000 px^2
+            const areaScale = (CONFIG.world.width * CONFIG.world.height) / 6400000;
+            
+            CONFIG.grass.count = Math.round(240 * areaScale);
+            CONFIG.flowers.count = Math.round(45 * areaScale);
+            CONFIG.stones.count = Math.round(32 * areaScale);
+        } else {
+            // Revert to defaults if not customized
+            CONFIG.world.width = 3200;
+            CONFIG.world.height = 2000;
+            CONFIG.grass.count = 240;
+            CONFIG.flowers.count = 45;
+            CONFIG.stones.count = 32;
+        }
         
         // Generate new randomized terrain coordinates
         this.generateLakePositions();
@@ -672,6 +706,20 @@ class GameSimulation {
             recreateBtn.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevents placing marker under the button on click
                 
+                // Read custom dimensions from modal inputs
+                const wInput = document.getElementById('input-world-width');
+                const hInput = document.getElementById('input-world-height');
+                
+                let customW = 3200;
+                let customH = 2000;
+                
+                if (wInput && hInput) {
+                    const parsedW = parseInt(wInput.value);
+                    const parsedH = parseInt(hInput.value);
+                    if (!isNaN(parsedW)) customW = Math.max(1200, Math.min(6400, parsedW));
+                    if (!isNaN(parsedH)) customH = Math.max(1200, Math.min(4000, parsedH));
+                }
+                
                 // Clear active save state
                 localStorage.removeItem('ant_kingdom_save_state');
                 
@@ -692,11 +740,16 @@ class GameSimulation {
                     modal.style.display = 'none';
                 }
                 
-                // Generate a fresh procedural world and save it immediately
-                this.generateNewWorld();
+                // Generate a fresh procedural world with custom bounds
+                this.generateNewWorld(customW, customH);
+                
+                // Reset camera viewport to focus on the center of the newly resized map
+                this.cameraX = CONFIG.world.width / 2;
+                this.cameraY = CONFIG.world.height / 2;
+                this.clampCamera();
                 
                 // Show gorgeous warning toast
-                this.showToast("WORLD RECREATED!");
+                this.showToast(`WORLD RECREATED: ${CONFIG.world.width}x${CONFIG.world.height}!`);
             });
         }
         

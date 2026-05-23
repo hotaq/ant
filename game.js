@@ -199,23 +199,48 @@ class GameSimulation {
         const w = CONFIG.world.width;
         const h = CONFIG.world.height;
         
-        // Large Lake: Base radius rx=360, ry=240
-        const rx1 = 360;
-        const ry1 = 240;
-        // Keep inside bounds with 100px padding
-        const x1 = rx1 + 100 + Math.random() * (w / 2 - rx1 - 200); // left half of the world
-        const y1 = ry1 + 100 + Math.random() * (h - ry1 * 2 - 200);
+        // Randomize lake count: 1 or 2 lakes (max 2 lakes)
+        const numLakes = Math.random() < 0.25 ? 1 : 2; // 75% chance of 2 lakes, 25% chance of 1 lake
         
-        // Small Lake: Base radius rx=240, ry=170
-        const rx2 = 240;
-        const ry2 = 170;
-        const x2 = w / 2 + rx2 + 100 + Math.random() * (w / 2 - rx2 - 200); // right half of the world
-        const y2 = ry2 + 100 + Math.random() * (h - ry2 * 2 - 200);
+        const newLakes = [];
         
-        CONFIG.lake.lakes = [
-            { x: Math.round(x1), y: Math.round(y1), rx: rx1, ry: ry1 },
-            { x: Math.round(x2), y: Math.round(y2), rx: rx2, ry: ry2 }
-        ];
+        // Lake 1: Randomized Large Lake in Left/Center region
+        const rx1 = 280 + Math.random() * 140; // Size variation: 280px to 420px
+        const ry1 = 180 + Math.random() * 100; // Size variation: 180px to 280px
+        const x1 = rx1 + 150 + Math.random() * (w / 2 - rx1 - 300);
+        const y1 = ry1 + 150 + Math.random() * (h - ry1 * 2 - 300);
+        
+        newLakes.push({
+            x: Math.round(x1),
+            y: Math.round(y1),
+            rx: Math.round(rx1),
+            ry: Math.round(ry1),
+            // Unique shape parameters for procedural wave-deformation
+            waveIntensity: 0.05 + Math.random() * 0.08, // Wobble intensity: 5% to 13%
+            freq1: 4.0 + Math.random() * 6.0,          // Sin frequency coefficient
+            freq2: 2.0 + Math.random() * 4.0           // Cos frequency coefficient
+        });
+        
+        if (numLakes === 2) {
+            // Lake 2: Randomized Small Lake in Right/Center region
+            const rx2 = 160 + Math.random() * 90;  // Size variation: 160px to 250px
+            const ry2 = 110 + Math.random() * 70;  // Size variation: 110px to 180px
+            const x2 = w / 2 + rx2 + 150 + Math.random() * (w / 2 - rx2 - 300);
+            const y2 = ry2 + 150 + Math.random() * (h - ry2 * 2 - 300);
+            
+            newLakes.push({
+                x: Math.round(x2),
+                y: Math.round(y2),
+                rx: Math.round(rx2),
+                ry: Math.round(ry2),
+                // Unique shape parameters for procedural wave-deformation
+                waveIntensity: 0.04 + Math.random() * 0.06, // Wobble intensity: 4% to 10%
+                freq1: 3.5 + Math.random() * 5.0,          // Sin frequency coefficient
+                freq2: 1.5 + Math.random() * 3.5           // Cos frequency coefficient
+            });
+        }
+        
+        CONFIG.lake.lakes = newLakes;
     }
 
     init() {
@@ -522,8 +547,11 @@ class GameSimulation {
             if (dist === 0) return true;
             
             const angle = Math.atan2(dy, dx);
-            // Dynamic perimeter deformation wave: ~8% variance at higher frequencies
-            const wave = 1.0 + 0.08 * Math.sin(angle * 6.5) * Math.cos(angle * 3.0);
+            // Dynamic perimeter deformation wave using per-lake randomized shape coefficients
+            const waveIntensity = l.waveIntensity !== undefined ? l.waveIntensity : 0.08;
+            const freq1 = l.freq1 !== undefined ? l.freq1 : 6.5;
+            const freq2 = l.freq2 !== undefined ? l.freq2 : 3.0;
+            const wave = 1.0 + waveIntensity * Math.sin(angle * freq1) * Math.cos(angle * freq2);
             
             const rx = l.rx * wave;
             const ry = l.ry * wave;

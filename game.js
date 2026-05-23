@@ -181,9 +181,9 @@ class GameSimulation {
         
         // Generate world items once at startup
         this.generatePixelBackground();
+        this.generateStones(); // Generate stones first so grass/flowers can avoid them!
         this.generateGrass();
         this.generateFlowers();
-        this.generateStones();
         
         window.addEventListener('resize', () => this.resizeCanvas());
         
@@ -494,8 +494,25 @@ class GameSimulation {
         
         for (let i = 0; i < CONFIG.flowers.count; i++) {
             const imgIndex = Math.floor(Math.random() * CONFIG.flowers.paths.length);
-            const fx = this.randomAxisPoint(w, margin);
-            const fy = this.randomAxisPoint(h, margin);
+            
+            let fx, fy;
+            let attempts = 0;
+            let overlapsStone = false;
+            
+            do {
+                fx = this.randomAxisPoint(w, margin);
+                fy = this.randomAxisPoint(h, margin);
+                
+                overlapsStone = false;
+                for (const stone of this.stoneList) {
+                    const dist = Math.hypot(fx - stone.x, fy - stone.y);
+                    if (dist < stone.radius * 1.5) {
+                        overlapsStone = true;
+                        break;
+                    }
+                }
+                attempts++;
+            } while (overlapsStone && attempts < 25);
             
             this.flowerList.push({
                 x: fx,
@@ -957,9 +974,36 @@ class GameSimulation {
                 gy = this.randomAxisPoint(h, margin);
             }
             
-            // Ensure strictly inside boundaries
-            gx = this.clampAxisPoint(gx, w, margin);
-            gy = this.clampAxisPoint(gy, h, margin);
+            // Ensure strictly inside boundaries and doesn't spawn inside a stone
+            let attempts = 0;
+            let overlapsStone = false;
+            do {
+                if (attempts > 0) {
+                    if (Math.random() < 0.93) {
+                        const center = centers[Math.floor(Math.random() * centers.length)];
+                        const angle = Math.random() * Math.PI * 2;
+                        const dist = Math.pow(Math.random(), 1.5) * center.radius; 
+                        gx = center.x + Math.cos(angle) * dist;
+                        gy = center.y + Math.sin(angle) * dist;
+                    } else {
+                        gx = this.randomAxisPoint(w, margin);
+                        gy = this.randomAxisPoint(h, margin);
+                    }
+                }
+                
+                gx = this.clampAxisPoint(gx, w, margin);
+                gy = this.clampAxisPoint(gy, h, margin);
+                
+                overlapsStone = false;
+                for (const stone of this.stoneList) {
+                    const dist = Math.hypot(gx - stone.x, gy - stone.y);
+                    if (dist < stone.radius * 1.5) {
+                        overlapsStone = true;
+                        break;
+                    }
+                }
+                attempts++;
+            } while (overlapsStone && attempts < 25);
             
             const size = CONFIG.grass.baseSize * (0.7 + Math.random() * 0.5);
             const { pixels, maxHeight } = this.generateGrassClumpPixels(size);

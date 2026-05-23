@@ -250,7 +250,17 @@ class GameSimulation {
             grass: this.grassTufts.map(g => ({ x: g.x, y: g.y, size: g.size })),
             flowers: this.flowerList.map(f => ({ x: f.x, y: f.y, imgIndex: f.imgIndex, scale: f.scale })),
             nestPos: this.nestPos,
-            nestPlaced: this.nestPlaced
+            nestPlaced: this.nestPlaced,
+            // 🐜 Persist ant positions & states
+            ants: this.ants.map(a => ({
+                x: a.x,
+                y: a.y,
+                angle: a.angle,
+                hasFood: a.hasFood,
+                role: a.role,
+                wanderTime: a.wanderTime
+            })),
+            savedAt: Date.now()
         };
         try {
             localStorage.setItem('ant_kingdom_save_state', JSON.stringify(mapState));
@@ -327,8 +337,21 @@ class GameSimulation {
                 if (placeBtn) placeBtn.style.display = 'none';
                 const spawnBtn = document.getElementById('btn-spawn-ant');
                 if (spawnBtn) spawnBtn.style.display = 'block';
-                
-                // Spawn 3 initial ants emerging from the nest as a delightful load reward!
+            }
+            
+            // Restore Ants and resume crawling instantly!
+            this.ants = [];
+            if (mapState.ants && mapState.ants.length > 0) {
+                mapState.ants.forEach(aData => {
+                    const ant = new Ant(aData.x, aData.y, this);
+                    ant.angle = aData.angle !== undefined ? aData.angle : Math.random() * Math.PI * 2;
+                    ant.hasFood = aData.hasFood !== undefined ? aData.hasFood : false;
+                    ant.role = aData.role !== undefined ? aData.role : 'wanderer';
+                    ant.wanderTime = aData.wanderTime !== undefined ? aData.wanderTime : 1.0;
+                    this.ants.push(ant);
+                });
+            } else if (this.nestPlaced && this.nestPos) {
+                // Fallback: if nest was placed but no ants were stored (e.g. from older saves), spawn initial 3 ants!
                 for (let k = 0; k < 3; k++) {
                     setTimeout(() => {
                         this.spawnAnt(this.nestPos.x, this.nestPos.y);
@@ -377,6 +400,11 @@ class GameSimulation {
         }
         
         window.addEventListener('resize', () => this.resizeCanvas());
+
+        // Auto-save on page refresh, navigation, or close to prevent any state reset!
+        window.addEventListener('beforeunload', () => {
+            this.saveWorldToLocalStorage();
+        });
         
         // 🎮 --- MOUSE & TRACKPAD GESTURE ENGINE (Cross-Platform Pan & Zoom) ---
         
@@ -1568,6 +1596,13 @@ class GameSimulation {
     }
 
     update(dt) {
+        // 💾 Periodic auto-save every 4 seconds to guarantee zero ant state loss
+        this.autoSaveTimer = (this.autoSaveTimer || 0) + dt;
+        if (this.autoSaveTimer >= 4.0) {
+            this.saveWorldToLocalStorage();
+            this.autoSaveTimer = 0;
+        }
+
         // Smoothly interpolate (lerp) camera zoom scale
         const prevZoom = this.cameraZoom;
         this.cameraZoom += (this.targetZoom - this.cameraZoom) * this.zoomLerpSpeed;
